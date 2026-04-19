@@ -930,6 +930,66 @@ async def shopify_create_webhook(params: CreateWebhookInput) -> str:
         return _error(e)
 
 
+
+# ---------------------------------------------------------------------------
+# REST API proxy endpoint for n8n integration
+# ---------------------------------------------------------------------------
+from starlette.routing import Route
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+async def api_shopify(request: Request) -> JSONResponse:
+      """Simple REST proxy: POST /api/shopify with {action, ...params}"""
+      try:
+                body = await request.json()
+except Exception:
+        return JSONResponse({"error": "Invalid JSON"}, status_code=400)
+    action = body.get("action", "getOrders")
+    limit  = int(body.get("limit", 10))
+    try:
+              if action == "getOrders":
+                            data = await _request("GET", "orders.json", params={"limit": limit, "status": "any"})
+                            return JSONResponse(data)
+elif action == "getProducts":
+            data = await _request("GET", "products.json", params={"limit": limit})
+            return JSONResponse(data)
+elif action == "getProduct":
+            pid  = body.get("productId", "")
+            data = await _request("GET", f"products/{pid}.json")
+            return JSONResponse(data)
+elif action == "getOrder":
+            oid  = body.get("orderId", "")
+            data = await _request("GET", f"orders/{oid}.json")
+            return JSONResponse(data)
+elif action == "getShopInfo":
+            data = await _request("GET", "shop.json")
+            return JSONResponse(data)
+elif action == "createProduct":
+            product = {
+                              "title":        body.get("title", "New Product"),
+                              "body_html":    body.get("description", ""),
+                              "vendor":       body.get("vendor", "SparTasche"),
+                              "product_type": body.get("productType", ""),
+                              "tags":         body.get("tags", ""),
+                              "variants": [{"price": body.get("price", "0.00"), "sku": body.get("sku", "")}],
+                              "status":       body.get("status", "draft"),
+            }
+            data = await _request("POST", "products.json", body={"product": product})
+            return JSONResponse(data)
+elif action == "updateProduct":
+            pid  = body.get("productId", "")
+            data = await _request("PUT", f"products/{pid}.json", body={"product": body.get("updates", {})})
+            return JSONResponse(data)
+elif action == "getCustomers":
+            data = await _request("GET", "customers.json", params={"limit": limit})
+            return JSONResponse(data)
+else:
+            return JSONResponse({"error": f"Unknown action: {action}"}, status_code=400)
+except Exception as e:
+          return JSONResponse({"error": str(e)}, status_code=500)
+
+# Mount REST routes on the MCP app
+mcp.app.add_route("/api/shopify", api_shopify, methods=["POST", "OPTIONS"])
 # ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
